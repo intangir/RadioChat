@@ -1,0 +1,6 @@
+name: RadioChat
+main: com.github.intangir.RadioChat.RadioChat
+version: 1.0
+description: A combination of features from realisticchat, herochat, and radio beacons
+author: Intangir
+
