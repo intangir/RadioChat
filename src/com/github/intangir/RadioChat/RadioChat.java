@@ -4,8 +4,11 @@ import java.util.logging.Logger;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
@@ -15,7 +18,6 @@ import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import static com.github.intangir.RadioChat.Radio.UpdateRadio;
-import static com.github.intangir.RadioChat.Radio.DeleteRadio;
 import static com.github.intangir.RadioChat.Radio.ScanTuneRadio;
 import static com.github.intangir.RadioChat.Radio.SaveRadios;
 import static com.github.intangir.RadioChat.Radio.LoadRadios;
@@ -53,25 +55,55 @@ public class RadioChat extends JavaPlugin implements Listener
 		log.info("v" + pdfFile.getVersion() + " disabled.");
 	}
 	
-	@EventHandler(ignoreCancelled=true)
+	public void ScheduleUpdate(final Location loc, final Player p)
+	{
+		Bukkit.getScheduler().scheduleSyncDelayedTask(this, new Runnable() {
+			public void run() {
+				UpdateRadio(loc, p);
+			}
+		}, 1);
+	}
+	
+	@EventHandler(ignoreCancelled=true, priority = EventPriority.MONITOR)
 	public void onBlockPlace(BlockPlaceEvent e)
 	{
-		if(e.getBlock().getType() == Material.IRON_BLOCK)
+		Material m = e.getBlock().getType();
+		if(m == Material.IRON_BLOCK || 
+		   m == Material.GOLD_BLOCK ||
+		   m == Material.IRON_FENCE)
 		{
-			UpdateRadio(e.getBlock().getLocation(), 100, "new", "message");
-			log.info("updated radio");
+			ScheduleUpdate(e.getBlock().getLocation(), e.getPlayer());
 		}
     }
 
-	@EventHandler(ignoreCancelled=true)
+	@EventHandler(ignoreCancelled=true, priority = EventPriority.MONITOR)
 	public void onBlockBreak(BlockBreakEvent e)
 	{
-		if(e.getBlock().getType() == Material.IRON_BLOCK)
+		Material m = e.getBlock().getType();
+		if(m == Material.IRON_BLOCK || 
+		   m == Material.GOLD_BLOCK ||
+		   m == Material.IRON_FENCE)
 		{
-			DeleteRadio(e.getBlock().getLocation());
-			log.info("deleted radio");
+			ScheduleUpdate(e.getBlock().getLocation(), e.getPlayer());
 		}
     }
+	
+	@EventHandler(ignoreCancelled=true, priority = EventPriority.MONITOR)
+	public void onRedstoneEvent(BlockRedstoneEvent e)
+	{
+		Material m = e.getBlock().getType();
+		if(m == Material.IRON_BLOCK || 
+		   m == Material.GOLD_BLOCK)
+		{
+			log.info("restone event" + e.getBlock().isBlockPowered());
+
+			Radio radio = GetRadioAt(e.getBlock().getLocation());
+			if(radio != null)
+			{
+				radio.setPowered(e.getBlock().isBlockPowered());
+			}
+		}
+	}
 
 	@EventHandler(ignoreCancelled=true)
 	public void onPlayerInteract(PlayerInteractEvent e)
@@ -90,19 +122,6 @@ public class RadioChat extends JavaPlugin implements Listener
 				e.getPlayer().setCompassTarget(station.getLocation());
 			}
 			e.setCancelled(true);
-		}
-	}
-
-	@EventHandler(ignoreCancelled=true)
-	public void onRedstoneEvent(BlockRedstoneEvent e)
-	{
-		if(e.getBlock().getType() == Material.IRON_BLOCK)
-		{
-			Radio radio = GetRadioAt(e.getBlock().getLocation());
-			if(radio != null)
-			{
-				radio.setPowered(e.getBlock().isBlockPowered());
-			}
 		}
 	}
 }
