@@ -13,6 +13,7 @@ import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
@@ -23,8 +24,9 @@ public class Radio implements Comparable<Radio>
 
 	final static int maxHeight = 250;
 	final static int minHeight = 4;
-	final static int seaLevel = 65;
+	final static int seaLevel = 64;
 	final static int rangePerHeight = 50;
+	final static String defaultName = "unnamed";
 	
 	public static Map<Location, Radio> allRadios = new HashMap<Location, Radio>();
 	private static boolean dirty = false;
@@ -63,7 +65,7 @@ public class Radio implements Comparable<Radio>
 			e.printStackTrace();
 		}
 	}
-	
+
 	public static void LoadRadios()
 	{
 		File file = new File(plugin.getDataFolder(), "save.yml");
@@ -86,8 +88,28 @@ public class Radio implements Comparable<Radio>
 				allRadios.put(KeyXZ(radio.getLocation()), radio);
 			}
 		}
+		plugin.log.info("Loaded " + allRadios.size() + " radios.");
 	}
-	
+
+	public static void UpdateSign(Location loc, Player p)
+	{
+		Material m = loc.getBlock().getType();
+		if(m != Material.GOLD_BLOCK && m != Material.IRON_BLOCK)
+		{
+			return;
+		}
+		
+		Radio existing = GetRadioAt(loc);
+		
+		if(existing == null)
+		{
+			return;
+		}
+		
+		existing.updateSign();
+		p.sendMessage(ChatColor.YELLOW + "Updated radio [" + existing.getName() + "] " + (existing.getMessage() != null ? ("\"" + existing.getMessage() + "\"") : ""));
+	}
+
 	public static int MeasureHeight(Location _loc)
 	{
 		Material m = _loc.getBlock().getType();
@@ -109,17 +131,13 @@ public class Radio implements Comparable<Radio>
 				break;
 			}
 		}
-		plugin.log.info("height = " + height);
 		return height;
 	}
 
 	public static Location FindRadioBase(Location _loc)
 	{
 		Location loc = _loc.clone();
-		plugin.log.info("looking for radio base");
 		Material m;
-		
-		plugin.log.info("location " + loc.toString());
 		
 		while(loc.getBlockY() >= seaLevel)
 		{
@@ -127,17 +145,14 @@ public class Radio implements Comparable<Radio>
 			
 			if(m == Material.IRON_FENCE)
 			{
-				plugin.log.info("found iron, looking lower");
 				loc.subtract(0, 1, 0);
 			}
 			else if(m == Material.GOLD_BLOCK || m == Material.IRON_BLOCK)
 			{
-				plugin.log.info("found the base");
 				return loc;
 			}
 			else
 			{
-				plugin.log.info("found non radio part");
 				break;
 			}
 		}
@@ -146,22 +161,14 @@ public class Radio implements Comparable<Radio>
 	
 	public static void UpdateRadio(Location loc, Player p)
 	{
-		plugin.log.info("updating radio");
-		
-		plugin.log.info("location check 1 " + loc.toString());
-		
-		Radio existing = GetRadioAt(loc);
-		
-		plugin.log.info("location check 2 " + loc.toString());
+		Radio existing = GetRadioAtXZ(loc);
 		
 		int height = 0;
 		if(existing != null)
 		{
-			plugin.log.info("checking existing radio");
 			height = MeasureHeight(existing.getLocation());
 			if(height >= minHeight)
 			{
-				plugin.log.info("updating radio height");
 				if(existing.setHeight(height))
 				{
 					p.sendMessage(ChatColor.YELLOW + "Radio range changed to " + existing.getRange() + " meters.");
@@ -169,7 +176,6 @@ public class Radio implements Comparable<Radio>
 			}
 			else
 			{
-				plugin.log.info("removing broken radio");
 				p.sendMessage(ChatColor.YELLOW + "Radio ruined.");
 				DeleteRadio(existing.getLocation());
 			}
@@ -188,10 +194,8 @@ public class Radio implements Comparable<Radio>
 	
 	public static Radio CreateRadio(Location loc)
 	{
-		plugin.log.info("creating radio");
 		if(loc == null)
 		{
-			plugin.log.info("bad location");
 			return null;
 		}
 
@@ -200,7 +204,6 @@ public class Radio implements Comparable<Radio>
 		
 		if(m != Material.GOLD_BLOCK && m != Material.IRON_BLOCK)
 		{
-			plugin.log.info("not radio base type");
 			return null;
 		}
 		
@@ -209,18 +212,19 @@ public class Radio implements Comparable<Radio>
 		// must be at least minHeight
 		if(height < minHeight)
 		{
-			plugin.log.info("not tall enough");
 			return null;
 		}
 
 		Radio newRadio = new Radio(loc, 
 								   height, 
-								   base.isBlockPowered(), 
-								   m == Material.GOLD_BLOCK, 
-								   "unnamed", 
+								   false, 
+								   m == Material.GOLD_BLOCK,
+								   defaultName, 
 								   null);
 		
-		plugin.log.info("created new radio!!");
+		plugin.log.info("created new radio at " + loc.toString());
+		newRadio.updateSign();
+		newRadio.updatePowered();
 		
 		allRadios.put(KeyXZ(loc), newRadio);
 		dirty = true;
@@ -230,6 +234,7 @@ public class Radio implements Comparable<Radio>
 	
 	public static void DeleteRadio(Location loc)
 	{
+		plugin.log.info("destroyed radio at " + loc.toString());
 		allRadios.remove(KeyXZ(loc));
 		dirty = true;
 	}
@@ -261,13 +266,47 @@ public class Radio implements Comparable<Radio>
 		else
 		{
 			int size = nearby.size();
-			int index = nearby.indexOf(GetRadioAt(tuneLoc)) + change;
+			int index = nearby.indexOf(GetRadioAtXZ(tuneLoc)) + change;
 			index = ((index % size) + size) % size;
 			return nearby.get(index);
 		}
 	}
+
+	public static Radio GetRadioAdjacent(Location loc)
+	{
+		Block o = loc.getBlock();
+		BlockFace[] faces = {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST, BlockFace.UP, BlockFace.DOWN};
+		for (BlockFace face : faces)
+		{
+			Block b = o.getRelative(face);
+			Material m = b.getType();
+			if(m == Material.IRON_BLOCK || 
+			   m == Material.GOLD_BLOCK)
+			{
+				Radio r = GetRadioAt(b.getLocation());
+				if(r != null)
+				{
+					return r;
+				}
+			}
+		}
+		return null;
+	}
 	
 	public static Radio GetRadioAt(Location loc)
+	{
+		Radio radio = GetRadioAtXZ(loc);
+		if(radio != null && radio.getLocation().equals(loc))
+		{
+			return radio;
+		}
+		else
+		{
+			return null;
+		}
+	}
+	
+	public static Radio GetRadioAtXZ(Location loc)
 	{
 		return allRadios.get(KeyXZ(loc));
 	}
@@ -324,15 +363,86 @@ public class Radio implements Comparable<Radio>
 		return name;
 	}
 	
+	public void setName(String _name)
+	{
+		dirty = true;
+		if(_name.isEmpty() || _name.equals(""))
+		{
+			name = defaultName;
+		}
+		else
+		{
+			name = _name;
+		}
+	}
+	
+	public String getMessage()
+	{
+		return message;
+	}
+
+	public void setMessage(String _msg)
+	{
+		dirty = true;
+		if(_msg == null || _msg.isEmpty() || _msg.equals(""))
+		{
+			message = null;
+		}
+		else
+		{
+			message = _msg;
+		}
+	}
+
 	public int getRange()
 	{
 		return range;
 	}
 	
+	public void updatePowered()
+	{
+		setPowered(getLocation().getBlock().isBlockPowered());
+	}
+	
 	public void setPowered(boolean _powered)
 	{
-		powered = _powered;
-		dirty = true;
+		if(powered != _powered)
+		{
+			dirty = true;
+			powered = _powered;
+		}
+	}
+	
+	public void updateSign()
+	{
+		BlockFace[] faces = {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST};
+		for (BlockFace face : faces)
+		{
+			Block sign = location.getBlock().getRelative(face);
+			if(sign.getType() == Material.WALL_SIGN)
+			{
+				if(((org.bukkit.material.Sign)sign.getState().getData()).getAttachedFace().getOppositeFace() == face)
+				{
+					// found a sign attached to our radio
+					updateLines(((org.bukkit.block.Sign)sign.getState()).getLines());
+					return;
+				}
+			}
+		}
+		setName(defaultName);
+		setMessage(null);
+	}
+	
+	public void updateLines(String[] lines)
+	{
+        StringBuffer buffer = new StringBuffer();
+        for (int i = 1; i < lines.length; i++) {
+            buffer.append(lines[i]);
+            buffer.append(" ");
+        }
+
+		setName(lines[0]);
+		setMessage(buffer.toString().trim());
 	}
 	
 	public boolean setHeight(int _height)

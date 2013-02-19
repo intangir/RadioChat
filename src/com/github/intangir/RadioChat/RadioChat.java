@@ -10,18 +10,22 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.block.BlockRedstoneEvent;
+import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.material.Sign;
 import org.bukkit.plugin.PluginDescriptionFile;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import static com.github.intangir.RadioChat.Radio.UpdateRadio;
+import static com.github.intangir.RadioChat.Radio.UpdateSign;
 import static com.github.intangir.RadioChat.Radio.ScanTuneRadio;
 import static com.github.intangir.RadioChat.Radio.SaveRadios;
 import static com.github.intangir.RadioChat.Radio.LoadRadios;
-import static com.github.intangir.RadioChat.Radio.GetRadioAt;
+import static com.github.intangir.RadioChat.Radio.GetRadioAdjacent;
 
 
 public class RadioChat extends JavaPlugin implements Listener
@@ -54,7 +58,7 @@ public class RadioChat extends JavaPlugin implements Listener
 		SaveRadios();
 		log.info("v" + pdfFile.getVersion() + " disabled.");
 	}
-	
+
 	public void ScheduleUpdate(final Location loc, final Player p)
 	{
 		Bukkit.getScheduler().scheduleSyncDelayedTask(this, new Runnable() {
@@ -64,6 +68,25 @@ public class RadioChat extends JavaPlugin implements Listener
 		}, 1);
 	}
 	
+
+	public void ScheduleSignUpdate(final Location loc, final Player p)
+	{
+		Bukkit.getScheduler().scheduleSyncDelayedTask(this, new Runnable() {
+			public void run() {
+				UpdateSign(loc, p);
+			}
+		}, 1);
+	}
+
+	public void SchedulePowerUpdate(final Radio radio)
+	{
+		Bukkit.getScheduler().scheduleSyncDelayedTask(this, new Runnable() {
+			public void run() {
+				radio.updatePowered();
+			}
+		}, 1);
+	}
+
 	@EventHandler(ignoreCancelled=true, priority = EventPriority.MONITOR)
 	public void onBlockPlace(BlockPlaceEvent e)
 	{
@@ -80,37 +103,59 @@ public class RadioChat extends JavaPlugin implements Listener
 	public void onBlockBreak(BlockBreakEvent e)
 	{
 		Material m = e.getBlock().getType();
-		if(m == Material.IRON_BLOCK || 
-		   m == Material.GOLD_BLOCK ||
-		   m == Material.IRON_FENCE)
+		
+		switch(m)
 		{
+		case IRON_BLOCK:
+		case GOLD_BLOCK:
+		case IRON_FENCE:
 			ScheduleUpdate(e.getBlock().getLocation(), e.getPlayer());
-		}
-    }
-	
-	@EventHandler(ignoreCancelled=true, priority = EventPriority.MONITOR)
-	public void onRedstoneEvent(BlockRedstoneEvent e)
-	{
-		Material m = e.getBlock().getType();
-		if(m == Material.IRON_BLOCK || 
-		   m == Material.GOLD_BLOCK)
-		{
-			log.info("restone event" + e.getBlock().isBlockPowered());
-
-			Radio radio = GetRadioAt(e.getBlock().getLocation());
+			break;
+			
+		case WALL_SIGN:
+			ScheduleSignUpdate(e.getBlock().getRelative(((Sign)e.getBlock().getState().getData()).getAttachedFace()).getLocation(), e.getPlayer());
+			break;
+			
+		case REDSTONE_WIRE:
+		case WOOD_PLATE:
+		case WOOD_BUTTON:
+		case STONE_PLATE:
+		case STONE_BUTTON:
+		case LEVER:
+		case DIODE:
+		case REDSTONE_TORCH_ON:
+			Radio radio = GetRadioAdjacent(e.getBlock().getLocation());
 			if(radio != null)
 			{
-				radio.setPowered(e.getBlock().isBlockPowered());
+				SchedulePowerUpdate(radio);
 			}
+			break;
 		}
 	}
 
-	@EventHandler(ignoreCancelled=true)
+	@EventHandler(ignoreCancelled=true, priority = EventPriority.MONITOR)
+	public void onSignChange(SignChangeEvent e)
+	{
+		ScheduleSignUpdate(e.getBlock().getRelative(((Sign)e.getBlock().getState().getData()).getAttachedFace()).getLocation(), e.getPlayer());
+	}
+
+	@EventHandler(ignoreCancelled=true, priority = EventPriority.MONITOR)
+	public void onRedstoneEvent(BlockRedstoneEvent e)
+	{
+		Radio radio = GetRadioAdjacent(e.getBlock().getLocation());
+		if(radio != null)
+		{
+			SchedulePowerUpdate(radio);
+		}
+	}
+
+	@EventHandler
 	public void onPlayerInteract(PlayerInteractEvent e)
 	{
 		if(e.getMaterial() == Material.COMPASS)
 		{
-			Radio station = ScanTuneRadio(e.getPlayer().getLocation(), 1, e.getPlayer().getCompassTarget());
+			int dir = (e.getAction() == Action.RIGHT_CLICK_AIR || e.getAction() == Action.RIGHT_CLICK_BLOCK) ? 1 : -1;
+			Radio station = ScanTuneRadio(e.getPlayer().getLocation(), dir, e.getPlayer().getCompassTarget());
 			
 			if(station == null)
 			{
@@ -119,9 +164,12 @@ public class RadioChat extends JavaPlugin implements Listener
 			else
 			{
 				e.getPlayer().sendMessage(ChatColor.YELLOW + "[" + station.getName() + "] " + (int)station.getLocation().distance(e.getPlayer().getLocation()) + " meters away." );
+				if(station.getMessage() != null)
+				{
+					e.getPlayer().sendMessage(ChatColor.YELLOW + "[" + station.getName() + "] \"" + station.getMessage() + "\"");
+				}
 				e.getPlayer().setCompassTarget(station.getLocation());
 			}
-			e.setCancelled(true);
 		}
 	}
 }
