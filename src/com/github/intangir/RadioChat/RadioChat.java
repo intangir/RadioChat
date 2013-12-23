@@ -43,8 +43,13 @@ public class RadioChat extends JavaPlugin implements Listener
 		
 		log.info("v" + pdfFile.getVersion() + " enabled!");
 		
-		LoadRadios();
-		
+		// wait for server and its worlds to be fully loaded before loading radios
+		Bukkit.getScheduler().scheduleSyncDelayedTask(this, new Runnable() {
+			public void run() {
+				LoadRadios();
+			}
+		}, 0);
+
 		// start saver
 		Bukkit.getScheduler().scheduleSyncRepeatingTask(this, new Runnable() {
 			public void run() {
@@ -130,6 +135,7 @@ public class RadioChat extends JavaPlugin implements Listener
 				SchedulePowerUpdate(radio);
 			}
 			break;
+		default:
 		}
 	}
 
